@@ -1,0 +1,31 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --diane-bg: rgba(0, 0, 0, 0);
+  --diane-body: #c5bfb0;
+  --diane-body-dark: #9e9888;
+  --diane-chrome: #d4cfc2;
+  --diane-screen: #1a1a1a;
+  --diane-text: #2a2a2a;
+  --diane-text-dim: #6a6a6a;
+  --diane-red: #e53935;
+  --diane-green: #43a047;
+  --diane-amber: #ffa726;
+  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+}
+
+html, body { background: transparent; overflow: hidden; }
+
+.diane {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.diane * { -webkit-app-region: no-drag; }
