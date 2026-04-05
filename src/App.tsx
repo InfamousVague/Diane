@@ -36,6 +36,22 @@ export function App() {
   const [transcript, setTranscript] = useState("");
   const [selectedTape, setSelectedTape] = useState<number | null>(null);
   const [viewingTape, setViewingTape] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  // Check if models need downloading on startup
+  useEffect(() => {
+    invoke<boolean>("check_models_ready").then((ready) => {
+      if (!ready) {
+        setDownloading(true);
+        invoke("download_models")
+          .then(() => setDownloading(false))
+          .catch((e) => {
+            console.error("Model download failed:", e);
+            setDownloading(false);
+          });
+      }
+    }).catch(() => {});
+  }, []);
 
   // Load saved tapes on startup, seed defaults if empty
   useEffect(() => {
@@ -223,6 +239,12 @@ export function App() {
         await invoke("load_tape", { audioPath: tape.audio_path });
         loadedTapeIdRef.current = tape.id;
       }
+      // Reset dictation word counter to match current playback position
+      const pos = await invoke<number>("get_playback_position");
+      if (selectedTape !== null && recordings[selectedTape]) {
+        const words = recordings[selectedTape].transcript.split(/\s+/).filter(Boolean);
+        lastTypedWordsRef.current = Math.floor(pos * words.length);
+      }
       await invoke("start_playback");
       setPlaying(true);
     } catch (e) {
@@ -347,6 +369,25 @@ export function App() {
         setPlaybackLevel(level);
         setHighlightProgress(position);
         tapePositionRef.current = position;
+
+        // Dictation during playback: type words as they're highlighted
+        if (dictatingRef.current && playing && !typingInFlightRef.current && selectedTape !== null && recordings[selectedTape]) {
+          const tape = recordings[selectedTape];
+          const words = tape.transcript.split(/\s+/).filter(Boolean);
+          const wordsReached = Math.floor(position * words.length);
+          if (wordsReached > lastTypedWordsRef.current) {
+            const newWords = words.slice(lastTypedWordsRef.current, wordsReached);
+            if (newWords.length > 0) {
+              const prefix = lastTypedWordsRef.current > 0 ? " " : "";
+              const toType = prefix + newWords.join(" ");
+              lastTypedWordsRef.current = wordsReached;
+              typingInFlightRef.current = true;
+              invoke("type_text", { text: toType })
+                .catch(() => {})
+                .finally(() => { typingInFlightRef.current = false; });
+            }
+          }
+        }
 
         if (state === "finished") {
           setPlaying(false);
@@ -575,6 +616,13 @@ export function App() {
       <div className="diane__drag-area" />
 
       <div className="diane__sidebar">
+        {downloading && (
+          <div className="diane__download-overlay">
+            <div className="diane__download-spinner" />
+            <div className="diane__download-title">Downloading Assets</div>
+            <div className="diane__download-label">First run setup</div>
+          </div>
+        )}
         <Header
           recordings={recordings}
           selectedTape={selectedTape}

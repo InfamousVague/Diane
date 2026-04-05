@@ -3,6 +3,7 @@ mod audio;
 use audio::recorder::AudioRecorder;
 use audio::transcribe::LiveTranscriber;
 use audio::playback::AudioPlayer;
+use audio::events::AudioEventDetector;
 use std::sync::Mutex;
 use tauri::Manager;
 use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState};
@@ -10,6 +11,7 @@ use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState};
 struct AppState {
     recorder: AudioRecorder,
     transcriber: Mutex<LiveTranscriber>,
+    event_detector: Mutex<AudioEventDetector>,
     player: Mutex<AudioPlayer>,
     recordings_dir: String,
     scripts_dir: String,
@@ -24,6 +26,13 @@ fn start_recording(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let mut transcriber = state.transcriber.lock().map_err(|e| e.to_string())?;
     transcriber.start()?;
 
+    // Start audio event detector
+    let mut detector = state.event_detector.lock().map_err(|e| e.to_string())?;
+    if let Err(e) = detector.start() {
+        log::warn!("Audio event detector failed to start: {}", e);
+        // Non-fatal — transcription works without events
+    }
+
     Ok(())
 }
 
@@ -37,6 +46,17 @@ struct StopRecordingResult {
 async fn stop_recording(state: tauri::State<'_, AppState>) -> Result<StopRecordingResult, String> {
     // Stop recording and get segment samples
     let segment = state.recorder.stop();
+
+    // Stop event detector and merge events into transcriber
+    {
+        let mut detector = state.event_detector.lock().map_err(|e| e.to_string())?;
+        let events = detector.take_events();
+        let transcriber = state.transcriber.lock().map_err(|e| e.to_string())?;
+        for event in events {
+            transcriber.push_event(event.timestamp_ms, event.label);
+        }
+        detector.stop();
+    }
 
     // Feed final samples to transcriber and stop
     let transcript = {
@@ -239,20 +259,44 @@ fn resolve_default_audio(app: tauri::AppHandle, state: tauri::State<'_, AppState
 }
 
 #[tauri::command]
+fn check_models_ready() -> bool {
+    let home = dirs::home_dir().unwrap_or_default();
+    home.join(".diane/models/ggml-base.en.bin").exists()
+}
+
+/// Download the whisper model (blocking — call from async context)
+#[tauri::command]
+async fn download_models() -> Result<String, String> {
+    tokio::task::spawn_blocking(|| {
+        audio::models::ensure_whisper_model("base.en")
+            .map(|p| p.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn truncate_audio_cmd(audio_path: String, at_secs: f32) -> Result<String, String> {
     audio::playback::truncate_audio(&audio_path, at_secs)
 }
 
 #[tauri::command]
 fn feed_audio_to_transcriber(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    // Get recent samples from the recorder and feed to transcriber
-    let samples = {
-        let buf = state.recorder.get_recent_samples();
-        buf
-    };
+    let samples = state.recorder.get_recent_samples();
     if !samples.is_empty() {
-        let mut transcriber = state.transcriber.lock().map_err(|e| e.to_string())?;
+        // Feed to whisper transcriber
+        let transcriber = state.transcriber.lock().map_err(|e| e.to_string())?;
         transcriber.feed_samples(&samples);
+
+        // Feed to audio event detector
+        let mut detector = state.event_detector.lock().map_err(|e| e.to_string())?;
+        detector.feed_samples(&samples);
+
+        // Pull any new events into the transcriber
+        let events = detector.take_events();
+        for event in events {
+            transcriber.push_event(event.timestamp_ms, event.label);
+        }
     }
     Ok(())
 }
@@ -275,6 +319,7 @@ pub fn run() {
 
     let recorder = AudioRecorder::new().expect("Failed to initialize audio recorder");
     let transcriber = LiveTranscriber::new();
+    let event_detector = AudioEventDetector::new(&scripts_dir);
     let player = AudioPlayer::new();
 
     tauri::Builder::default()
@@ -282,6 +327,7 @@ pub fn run() {
         .manage(AppState {
             recorder,
             transcriber: Mutex::new(transcriber),
+            event_detector: Mutex::new(event_detector),
             player: Mutex::new(player),
             recordings_dir: recordings_dir.to_string_lossy().to_string(),
             scripts_dir: scripts_dir.to_string(),
@@ -308,6 +354,8 @@ pub fn run() {
             get_tape_position_secs,
             truncate_audio_cmd,
             resolve_default_audio,
+            check_models_ready,
+            download_models,
             hide_window,
             show_window,
             save_tapes,
