@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# Tauri build artifacts
+src-tauri/target/
+
+# TTS models (too large to commit)
+src-tauri/models/xtts_v2/
+src-tauri/models/cooper-voice-ref.wav
+
+# Asset processing
+darken_assets.py
+public/assets/originals/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

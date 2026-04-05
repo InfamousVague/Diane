@@ -13,6 +13,7 @@
   --diane-amber: #ffa726;
   --font-mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --sidebar-width: 320px;
 }
 
 html, body { background: transparent; overflow: hidden; }
@@ -21,11 +22,73 @@ html, body { background: transparent; overflow: hidden; }
   width: 100vw;
   height: 100vh;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  -webkit-app-region: drag;
+  flex-direction: row;
+  justify-content: flex-end;
   user-select: none;
 }
 
 .diane * { -webkit-app-region: no-drag; }
+
+/* The sidebar strip — floating panel with rounded corners */
+.diane__sidebar {
+  width: var(--sidebar-width);
+  height: calc(100% - 24px);
+  margin: 12px 12px 12px 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  overflow: hidden;
+  /* Slide animation */
+  animation: sidebar-slide-in 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+.diane__sidebar--hiding {
+  transform: translateX(110%);
+  opacity: 0;
+}
+
+@keyframes sidebar-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Transcript column — fills everything above the recorder */
+.diane__transcript-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  padding: 60px 24px 8px;
+  position: relative;
+}
+
+
+/* Recorder dock — pinned at the bottom */
+.diane__recorder-dock {
+  flex-shrink: 0;
+  height: 180px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 24px;
+}
+
+/* Draggable area — the space to the left of the sidebar (transparent click-through) */
+.diane__drag-area {
+  flex: 1;
+  -webkit-app-region: drag;
+  pointer-events: none;
+}

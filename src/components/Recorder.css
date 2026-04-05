@@ -3,122 +3,192 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  width: 380px;
 }
 
-/* Body */
+/* ============================================
+   Body container — all layers stack here
+   Canvas size: 735 x 414, rendered at half for retina
+   ============================================ */
 .recorder__body {
   position: relative;
-  width: 380px;
-  height: 280px;
-  background: linear-gradient(180deg, #ccc5b3 0%, #b8b1a0 100%);
-  border-radius: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
-  overflow: hidden;
+  width: 735px;
+  height: 414px;
+  transform: scale(0.352);
+  transform-origin: bottom center;
 }
 
-.recorder__frame {
+/* Every layer is the same 735x414 canvas, stacked absolutely */
+.recorder__layer {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  opacity: 0.15;
   pointer-events: none;
-  mix-blend-mode: overlay;
+  user-select: none;
+  will-change: opacity, visibility;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
-/* Cassette window */
-.recorder__cassette-window {
+/* Interactive layers receive pointer events */
+.recorder__layer--interactive {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* Glass reflection over cassette window */
+.recorder__glass {
   position: absolute;
-  top: 20px;
-  left: 30px;
-  right: 30px;
-  height: 140px;
-  background: #1a1816;
-  border-radius: 8px;
-  border: 2px solid rgba(0, 0, 0, 0.3);
-  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  /* Positioned over the cassette window area */
+  left: 109px;
+  top: 97px;
+  width: 454px;
+  height: 277px;
+  border-radius: 6px;
+  pointer-events: none;
   overflow: hidden;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(255, 255, 255, 0.25) 45%,
+    rgba(255, 255, 255, 0.05) 45.5%,
+    rgba(255, 255, 255, 0.02) 60%,
+    transparent 80%
+  );
 }
 
-/* Reels */
-.recorder__reel {
+/* Hotkey hint below the recorder */
+.recorder__hotkey-hint {
   position: absolute;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.08);
-  transition: transform 0.05s linear;
+  bottom: -50px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: 34px;
+  color: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+  padding-top: 12px;
 }
 
-.recorder__reel--left { left: 50px; top: 40px; }
-.recorder__reel--right { right: 50px; top: 40px; }
+/* Meter ticks need fast transitions */
+.recorder__meter-tick {
+  transition: opacity 0.06s ease;
+}
 
-.recorder__reel-hub {
+/* Record button crossfade */
+.recorder__rec-btn {
+  transition: opacity 0.3s ease;
+}
+
+/* Invisible click zones positioned over buttons */
+.recorder__click-zone {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #3a3632;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  /* Debug: uncomment to see zones */
+  /* background: rgba(255, 0, 0, 0.2); */
 }
 
-.recorder__reel-spoke {
+.recorder__click-zone--record {
+  left: 83%;
+  top: 12%;
+  width: 12%;
+  height: 17%;
+}
+
+.recorder__click-zone--play {
+  left: 83%;
+  top: 32%;
+  width: 12%;
+  height: 17%;
+}
+
+.recorder__click-zone--forward {
+  left: 83%;
+  top: 52%;
+  width: 12%;
+  height: 17%;
+}
+
+.recorder__click-zone--rewind {
+  left: 83%;
+  top: 72%;
+  width: 12%;
+  height: 17%;
+}
+
+/* Dictation switch */
+.recorder__switch-knob {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+
+/* ============================================
+   Spinning wheels — positioned over the cassette reel holes
+   The wheel is 186x186, centered on each reel axis
+   ============================================ */
+.recorder__wheel {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 2px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.08);
-  transform-origin: top center;
-  transform: translateX(-50%);
+  width: 220px;
+  height: 220px;
+  pointer-events: none;
 }
 
-/* Tape between reels */
-.recorder__tape {
+.recorder__wheel img {
+  width: 100%;
+  height: 100%;
+}
+
+/* Wheels larger (220px) and slightly closer together */
+.recorder__wheel--left {
+  left: 117px;
+  top: 128px;
+}
+
+.recorder__wheel--right {
+  left: 338px;
+  top: 128px;
+}
+
+/* ============================================
+   Counter + REC overlay
+   ============================================ */
+.recorder__overlay {
   position: absolute;
-  top: 68px;
-  left: 78px;
-  right: 78px;
-  height: 2px;
-  background: rgba(139, 100, 60, 0.4);
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
-/* Counter */
 .recorder__counter {
   position: absolute;
-  bottom: 10px;
-  right: 16px;
+  bottom: 140px;
+  left: 250px;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(200, 180, 140, 0.6);
+  letter-spacing: 3px;
+  text-shadow: 0 0 6px rgba(200, 180, 140, 0.15);
+}
+
+.recorder__rec-light {
+  position: absolute;
+  top: 55px;
+  left: 430px;
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 700;
-  color: rgba(200, 180, 140, 0.8);
-  letter-spacing: 2px;
-  text-shadow: 0 0 4px rgba(200, 180, 140, 0.3);
-}
-
-/* REC indicator */
-.recorder__rec-light {
-  position: absolute;
-  top: 10px;
-  right: 14px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--diane-red);
+  color: #e53935;
   animation: rec-blink 1s step-end infinite;
-  text-shadow: 0 0 6px rgba(229, 57, 53, 0.5);
+  text-shadow: 0 0 8px rgba(229, 57, 53, 0.4);
 }
 
 @keyframes rec-blink {
@@ -126,120 +196,3 @@
   71%, 100% { opacity: 0; }
 }
 
-/* LED meter */
-.recorder__meter {
-  position: absolute;
-  left: 12px;
-  top: 28px;
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 2px;
-}
-
-.recorder__led {
-  width: 6px;
-  height: 10px;
-  border-radius: 1px;
-  background: rgba(255, 255, 255, 0.06);
-  transition: background 0.1s ease;
-}
-
-.recorder__led--active {
-  box-shadow: 0 0 4px currentColor;
-}
-
-/* Buttons */
-.recorder__buttons {
-  position: absolute;
-  bottom: 16px;
-  left: 30px;
-  right: 30px;
-  display: flex;
-  gap: 8px;
-}
-
-.recorder__btn {
-  flex: 1;
-  height: 44px;
-  border: none;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #e0d8c8 0%, #c8c0ae 100%);
-  box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.1s ease;
-}
-
-.recorder__btn:hover {
-  background: linear-gradient(180deg, #e8e0d0 0%, #d0c8b6 100%);
-}
-
-.recorder__btn:active, .recorder__btn--recording {
-  transform: translateY(1px);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.2),
-    inset 0 1px 3px rgba(0, 0, 0, 0.15);
-  background: linear-gradient(180deg, #c0b8a8 0%, #b8b0a0 100%);
-}
-
-.recorder__btn--recording {
-  border: 1px solid var(--diane-red);
-  box-shadow:
-    0 0 8px rgba(229, 57, 53, 0.3),
-    inset 0 1px 3px rgba(0, 0, 0, 0.15);
-}
-
-.recorder__btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.recorder__btn-label {
-  font-family: var(--font-sans);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--diane-text);
-}
-
-/* Transcript panel */
-.recorder__transcript {
-  width: 380px;
-  min-height: 120px;
-  max-height: 180px;
-  background: rgba(26, 24, 22, 0.85);
-  backdrop-filter: blur(12px);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  padding: 14px 16px;
-  overflow-y: auto;
-}
-
-.recorder__transcript-text {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.6;
-  color: rgba(200, 190, 170, 0.9);
-  white-space: pre-wrap;
-}
-
-.recorder__transcript-placeholder {
-  color: rgba(200, 190, 170, 0.3);
-  font-style: italic;
-}
-
-.recorder__cursor {
-  animation: cursor-blink 1s step-end infinite;
-  color: var(--diane-amber);
-}
-
-@keyframes cursor-blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}

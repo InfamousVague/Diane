@@ -10,11 +10,12 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Diane",
-        "width": 420,
-        "height": 500,
+        "width": 350,
+        "height": 800,
         "resizable": false,
         "fullscreen": false,
         "decorations": false,

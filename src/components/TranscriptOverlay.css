@@ -1,0 +1,59 @@
+.transcript-overlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 0;
+  flex: 1;
+}
+
+.transcript-overlay__line {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  transition: opacity 0.4s ease;
+}
+
+/* Playback highlight styles */
+.transcript-overlay__line--read {
+  color: rgba(255, 255, 255, 1);
+}
+
+.transcript-overlay__line--unread {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.transcript-overlay__read {
+  color: rgba(255, 255, 255, 1);
+}
+
+.transcript-overlay__unread {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* Clickable words for seeking */
+.transcript-overlay__word {
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background 0.15s ease;
+}
+
+.transcript-overlay__word:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.transcript-overlay__cursor {
+  color: #ffa726;
+  font-size: 12px;
+  animation: overlay-cursor-blink 1s step-end infinite;
+  text-align: center;
+  display: block;
+}
+
+@keyframes overlay-cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
