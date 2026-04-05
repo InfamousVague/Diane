@@ -1,10 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import "./Recorder.css";
 
-const BUTTON_FRAMES = {
-  record: ["ReordOff", "RecordMid1", "RecordMid2", "RecordOn"],
-};
-
 interface Props {
   recording: boolean;
   audioLevel: number;

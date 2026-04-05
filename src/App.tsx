@@ -36,7 +36,6 @@ export function App() {
   const [transcript, setTranscript] = useState("");
   const [selectedTape, setSelectedTape] = useState<number | null>(null);
   const [viewingTape, setViewingTape] = useState(false);
-  const viewingTapeRef = useRef(false);
 
   // Load saved tapes on startup, seed defaults if empty
   useEffect(() => {
@@ -97,7 +96,7 @@ export function App() {
 
   // Playback state
   const [playing, setPlaying] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [generating] = useState(false);
   const [rewinding, setRewinding] = useState(false);
   const [forwarding, setForwarding] = useState(false);
   const [playbackLevel, setPlaybackLevel] = useState(0);

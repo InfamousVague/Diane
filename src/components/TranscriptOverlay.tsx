@@ -53,7 +53,6 @@ export function TranscriptOverlay({ text, recording, highlightProgress, onSeek }
   // Track cumulative character position per line
   let charsSoFar = 0;
 
-  const totalChars = text.length;
   const allWords = text.split(/\s+/).filter(Boolean);
   const totalWords = allWords.length;
   const seekable = !!onSeek && totalWords > 0;
@@ -68,7 +67,7 @@ export function TranscriptOverlay({ text, recording, highlightProgress, onSeek }
   let globalWordIndex = 0;
 
   /** Render a line as clickable word spans */
-  const renderWords = (line: string, lineStart: number, className: string) => {
+  const renderWords = (line: string, _lineStart: number, className: string) => {
     if (!seekable) return line;
     const words = line.split(" ");
     return words.map((word, wi) => {
