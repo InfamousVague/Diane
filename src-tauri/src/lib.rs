@@ -9,6 +9,7 @@ use audio::desktop_capture::DesktopCapture;
 use meeting_detector::MeetingDetector;
 use std::sync::Mutex;
 use tauri::Manager;
+use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState};
 
 struct AppState {
@@ -432,10 +433,22 @@ pub fn run() {
                 tauri::image::Image::new_owned(rgba.to_vec(), 600, 600)
             };
 
+            // Tray right-click menu
+            let quit_item = MenuItem::with_id(app, "quit", "Quit Diane", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&quit_item])?;
+
+            let app_handle2 = app.handle().clone();
             TrayIconBuilder::new()
                 .tooltip("Diane — Voice Recorder")
                 .icon(tray_icon)
                 .icon_as_template(true)
+                .menu(&tray_menu)
+                .menu_on_left_click(false)
+                .on_menu_event(move |_app, event| {
+                    if event.id() == "quit" {
+                        app_handle2.exit(0);
+                    }
+                })
                 .on_tray_icon_event(move |_tray, event| {
                     if let tauri::tray::TrayIconEvent::Click {
                         button: MouseButton::Left,
