@@ -64,10 +64,14 @@ export function useTapeLibrary() {
               setViewingTape(true);
             })
             .catch(() => {
-              setRecordings(DEFAULT_TAPES);
-              invoke("save_tapes", { tapes: DEFAULT_TAPES }).catch(() => {});
+              const tapes = DEFAULT_TAPES.map((t) => ({
+                ...t,
+                audio_path: t.audio_path === "__DEFAULT__" ? "" : t.audio_path,
+              }));
+              setRecordings(tapes);
+              invoke("save_tapes", { tapes }).catch(() => {});
               setSelectedTape(0);
-              setTranscript(DEFAULT_TAPES[0].transcript);
+              setTranscript(tapes[0].transcript);
               setViewingTape(true);
             });
         }

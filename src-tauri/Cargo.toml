@@ -1,6 +1,6 @@
 [package]
 name = "diane"
-version = "0.5.0"
+version = "0.5.1"
 description = "Diane — Retro voice recorder with live transcription"
 authors = ["Matt Wisniewski"]
 license = "MIT"

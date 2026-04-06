@@ -23,39 +23,60 @@ pub fn load_tapes(state: tauri::State<'_, AppState>) -> Vec<SavedTape> {
 pub fn resolve_default_audio(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> String {
     let dest = format!("{}/default-tape.wav", state.recordings_dir);
     if std::path::Path::new(&dest).exists() {
+        log::info!("Default tape already at {}", dest);
         return dest;
     }
 
-    // Try bundled resource (release builds — from tauri.conf.json resources)
+    // Build a list of candidate paths to search
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    // 1. Bundled resource dir (tauri.conf.json resources mapping)
     if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled = resource_dir.join("default-tape.wav");
-        if bundled.exists() {
-            let _ = std::fs::copy(&bundled, &dest);
-            log::info!("Copied default tape from bundled resources to {}", dest);
-            return dest;
+        candidates.push(resource_dir.join("default-tape.wav"));
+        // Also check the _up_ path variant that Tauri creates
+        candidates.push(resource_dir.join("_up_/public/assets/default-tape.wav"));
+    }
+
+    // 2. Resolve via BaseDirectory::Resource
+    if let Ok(p) = app.path().resolve("default-tape.wav", tauri::path::BaseDirectory::Resource) {
+        candidates.push(p);
+    }
+    if let Ok(p) = app.path().resolve("assets/default-tape.wav", tauri::path::BaseDirectory::Resource) {
+        candidates.push(p);
+    }
+
+    // 3. Relative to the executable (release builds)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            candidates.push(exe_dir.join("../Resources/default-tape.wav"));
+            candidates.push(exe_dir.join("../Resources/_up_/public/assets/default-tape.wav"));
         }
     }
 
-    // Try frontend dist assets path
-    if let Ok(resource) = app.path().resolve("assets/default-tape.wav", tauri::path::BaseDirectory::Resource) {
-        if resource.exists() {
-            let _ = std::fs::copy(&resource, &dest);
-            log::info!("Copied default tape from dist assets to {}", dest);
-            return dest;
+    // 4. Dev mode: relative to CARGO_MANIFEST_DIR
+    if let Ok(d) = std::env::var("CARGO_MANIFEST_DIR") {
+        candidates.push(std::path::PathBuf::from(format!("{}/../public/assets/default-tape.wav", d)));
+    }
+
+    // Try each candidate
+    for candidate in &candidates {
+        if candidate.exists() {
+            match std::fs::copy(candidate, &dest) {
+                Ok(_) => {
+                    log::info!("Copied default tape from {} to {}", candidate.display(), dest);
+                    return dest;
+                }
+                Err(e) => {
+                    log::warn!("Found default tape at {} but copy failed: {}", candidate.display(), e);
+                }
+            }
         }
     }
 
-    // Dev mode: try from the public directory
-    let dev_path = std::env::var("CARGO_MANIFEST_DIR")
-        .map(|d| format!("{}/../public/assets/default-tape.wav", d))
-        .unwrap_or_default();
-    if std::path::Path::new(&dev_path).exists() {
-        let _ = std::fs::copy(&dev_path, &dest);
-        log::info!("Copied default tape from dev assets to {}", dest);
-        return dest;
-    }
-
-    log::warn!("Could not find default-tape.wav in any location");
+    log::warn!("Could not find default-tape.wav in any of {} locations: {:?}",
+        candidates.len(),
+        candidates.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()
+    );
     String::new()
 }
 
