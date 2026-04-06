@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Diane",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "identifier": "com.mattssoftware.diane",
   "build": {
     "frontendDist": "../dist",
@@ -41,6 +41,9 @@
     "macOS": {
       "entitlements": "Entitlements.plist",
       "signingIdentity": "0948896DC970503ADEF5B5070E0BB3E9D9047757"
-    }
+    },
+    "resources": [
+      "../public/assets/default-tape.wav"
+    ]
   }
 }

@@ -25,14 +25,26 @@ pub fn resolve_default_audio(app: tauri::AppHandle, state: tauri::State<'_, AppS
     if std::path::Path::new(&dest).exists() {
         return dest;
     }
-    // Try to copy from the frontend dist assets
-    if let Ok(resource) = app.path().resolve("assets/default-tape.wav", tauri::path::BaseDirectory::Resource) {
-        if resource.exists() {
-            let _ = std::fs::copy(&resource, &dest);
-            log::info!("Copied default tape from resources to {}", dest);
+
+    // Try bundled resource (release builds — from tauri.conf.json resources)
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled = resource_dir.join("default-tape.wav");
+        if bundled.exists() {
+            let _ = std::fs::copy(&bundled, &dest);
+            log::info!("Copied default tape from bundled resources to {}", dest);
             return dest;
         }
     }
+
+    // Try frontend dist assets path
+    if let Ok(resource) = app.path().resolve("assets/default-tape.wav", tauri::path::BaseDirectory::Resource) {
+        if resource.exists() {
+            let _ = std::fs::copy(&resource, &dest);
+            log::info!("Copied default tape from dist assets to {}", dest);
+            return dest;
+        }
+    }
+
     // Dev mode: try from the public directory
     let dev_path = std::env::var("CARGO_MANIFEST_DIR")
         .map(|d| format!("{}/../public/assets/default-tape.wav", d))
@@ -42,6 +54,8 @@ pub fn resolve_default_audio(app: tauri::AppHandle, state: tauri::State<'_, AppS
         log::info!("Copied default tape from dev assets to {}", dest);
         return dest;
     }
+
+    log::warn!("Could not find default-tape.wav in any location");
     String::new()
 }
 
