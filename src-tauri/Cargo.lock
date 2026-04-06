@@ -942,7 +942,7 @@ dependencies = [
 
 [[package]]
 name = "diane"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "cpal",
  "dirs 5.0.1",

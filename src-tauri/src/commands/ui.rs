@@ -14,3 +14,10 @@ pub fn show_window(app: tauri::AppHandle) {
         let _ = window.set_focus();
     }
 }
+
+#[tauri::command]
+pub fn open_devtools(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        window.open_devtools();
+    }
+}

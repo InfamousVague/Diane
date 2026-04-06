@@ -1,6 +1,6 @@
 [package]
 name = "diane"
-version = "0.5.1"
+version = "0.5.2"
 description = "Diane — Retro voice recorder with live transcription"
 authors = ["Matt Wisniewski"]
 license = "MIT"
@@ -18,7 +18,7 @@ tauri-build = { version = "2.5.6", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.10.3", features = ["macos-private-api", "tray-icon"] }
+tauri = { version = "2.10.3", features = ["macos-private-api", "tray-icon", "devtools"] }
 tauri-plugin-log = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-shell = "2"

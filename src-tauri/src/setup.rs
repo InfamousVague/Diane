@@ -26,8 +26,9 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Tray right-click menu
+    let devtools_item = MenuItem::with_id(app, "devtools", "Open DevTools", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Diane", true, None::<&str>)?;
-    let tray_menu = Menu::with_items(app, &[&quit_item])?;
+    let tray_menu = Menu::with_items(app, &[&devtools_item, &quit_item])?;
 
     let app_handle2 = app.handle().clone();
     TrayIconBuilder::new()
@@ -39,6 +40,10 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .on_menu_event(move |_app, event| {
             if event.id() == "quit" {
                 app_handle2.exit(0);
+            } else if event.id() == "devtools" {
+                if let Some(window) = app_handle2.get_webview_window("main") {
+                    window.open_devtools();
+                }
             }
         })
         .on_tray_icon_event(move |_tray, event| {

@@ -178,7 +178,11 @@ impl AudioPlayer {
     pub fn load_tape(&mut self, path: &str) -> Result<(), String> {
         self.stop();
 
-        let file = File::open(path).map_err(|e| format!("Can't open WAV: {}", e))?;
+        log::info!("Loading tape from: {}", path);
+        let file = File::open(path).map_err(|e| {
+            log::error!("Failed to open WAV at '{}': {}", path, e);
+            format!("Can't open WAV: {}", e)
+        })?;
         let reader = BufReader::new(file);
         let source = rodio::Decoder::new(reader).map_err(|e| format!("Can't decode: {}", e))?;
 
@@ -431,10 +435,19 @@ impl AudioPlayer {
     }
 
     fn start_source(&self, source: BufferSource) -> Result<(), String> {
+        log::info!("Starting audio source ({}Hz, {}ch, {} samples loaded)",
+            source.sample_rate, source.channels, source.samples.len());
         let (stream, handle) =
-            OutputStream::try_default().map_err(|e| format!("No audio output: {}", e))?;
-        let sink = Sink::try_new(&handle).map_err(|e| format!("Can't create sink: {}", e))?;
+            OutputStream::try_default().map_err(|e| {
+                log::error!("Failed to open audio output: {}", e);
+                format!("No audio output: {}", e)
+            })?;
+        let sink = Sink::try_new(&handle).map_err(|e| {
+            log::error!("Failed to create audio sink: {}", e);
+            format!("Can't create sink: {}", e)
+        })?;
         sink.append(source);
+        log::info!("Audio source started successfully");
 
         if let Ok(mut s) = self._stream.lock() {
             s.0 = Some(stream);

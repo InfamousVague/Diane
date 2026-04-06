@@ -86,6 +86,7 @@ pub fn run() {
             download_models,
             hide_window,
             show_window,
+            open_devtools,
             save_tapes,
             load_tapes,
         ])
