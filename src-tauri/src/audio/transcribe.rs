@@ -251,6 +251,7 @@ impl LiveTranscriber {
         self.events.lock().unwrap().push((word_count, label));
     }
 
+    #[allow(dead_code)]
     pub fn elapsed_ms(&self) -> u64 {
         self.sample_counter.load(Ordering::Relaxed) * 1000 / 16000
     }

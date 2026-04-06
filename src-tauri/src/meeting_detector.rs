@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use sysinfo::System;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 /// Known meeting app process names
 const MEETING_PROCESSES: &[(&str, &str)] = &[
@@ -138,6 +138,7 @@ impl MeetingDetector {
         }));
     }
 
+    #[allow(dead_code)]
     pub fn stop(&mut self) {
         self.stop_signal.store(true, Ordering::Relaxed);
         if let Some(handle) = self.worker.take() {

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { RecorderButton } from "./RecorderButton";
 import "./Recorder.css";
 
 interface Props {
@@ -25,13 +26,6 @@ interface Props {
 export function Recorder({ recording, audioLevel, dictating, desktopAudio, playing, generating, rewinding, forwarding, playbackLevel, onToggleDictation, onToggleDesktopAudio, onPlay, onToggleRecord, onRewindStart, onRewindStop, onForwardStart, onForwardStop, tapeProgress }: Props) {
   const [reelAngle, setReelAngle] = useState(0);
   const animRef = useRef(0);
-
-  // Debug: only log state changes, not every render
-  const prevRecording = useRef(recording);
-  if (prevRecording.current !== recording) {
-    console.log("Recorder state changed — recording:", recording);
-    prevRecording.current = recording;
-  }
 
   // Track rewind speed for wheel animation (matches Rust ramp: 0.5→4.0 over 800ms)
   const rewindStartRef = useRef(0);
@@ -135,58 +129,16 @@ export function Recorder({ recording, audioLevel, dictating, desktopAudio, playi
             alt="" draggable={false} />
         ))}
 
-        {/* Record button — flickers when recording, off otherwise */}
-        {recording ? (
-          <>
-            <img src="./assets/RecordMid2.png" className="recorder__layer"
-              style={{ zIndex: 13 }} alt="" draggable={false} />
-            <img src="./assets/RecordOn.png" className="recorder__layer"
-              style={{ zIndex: 14, opacity: recGlow }} alt="" draggable={false} />
-          </>
-        ) : (
-          <img src="./assets/ReordOff.png" className="recorder__layer"
-            style={{ zIndex: 13 }} alt="" draggable={false} />
-        )}
-        {/* Forward button — lit when fast-forwarding */}
-        {forwarding ? (
-          <>
-            <img src="./assets/ForwardMid2.png" className="recorder__layer"
-              style={{ zIndex: 13 }} alt="" draggable={false} />
-            <img src="./assets/ForwardOn.png" className="recorder__layer"
-              style={{ zIndex: 14, opacity: recGlow }} alt="" draggable={false} />
-          </>
-        ) : (
-          <img src="./assets/ForwardOff.png" className="recorder__layer" style={{ zIndex: 13 }} alt="" draggable={false} />
-        )}
-        {/* Play button — pulsing when generating, glowing when playing */}
-        {generating ? (
-          <>
-            <img src="./assets/PlayMid1.png" className="recorder__layer"
-              style={{ zIndex: 13 }} alt="" draggable={false} />
-            <img src="./assets/PlayMid2.png" className="recorder__layer"
-              style={{ zIndex: 14, opacity: recGlow }} alt="" draggable={false} />
-          </>
-        ) : playing ? (
-          <>
-            <img src="./assets/PlayMid2.png" className="recorder__layer"
-              style={{ zIndex: 13 }} alt="" draggable={false} />
-            <img src="./assets/PlayOn.png" className="recorder__layer"
-              style={{ zIndex: 14, opacity: recGlow }} alt="" draggable={false} />
-          </>
-        ) : (
-          <img src="./assets/PlayOff.png" className="recorder__layer" style={{ zIndex: 13 }} alt="" draggable={false} />
-        )}
-        {/* Rewind button — lit when rewinding */}
-        {rewinding ? (
-          <>
-            <img src="./assets/RewindMid2.png" className="recorder__layer"
-              style={{ zIndex: 13 }} alt="" draggable={false} />
-            <img src="./assets/RewindOn.png" className="recorder__layer"
-              style={{ zIndex: 14, opacity: recGlow }} alt="" draggable={false} />
-          </>
-        ) : (
-          <img src="./assets/RewindOff.png" className="recorder__layer" style={{ zIndex: 13 }} alt="" draggable={false} />
-        )}
+        {/* Recorder buttons — each with off/mid/on glow states */}
+        <RecorderButton active={recording} glow={recGlow}
+          offSrc="./assets/ReordOff.png" midSrc="./assets/RecordMid2.png" onSrc="./assets/RecordOn.png" />
+        <RecorderButton active={forwarding} glow={recGlow}
+          offSrc="./assets/ForwardOff.png" midSrc="./assets/ForwardMid2.png" onSrc="./assets/ForwardOn.png" />
+        <RecorderButton active={playing} glow={recGlow}
+          offSrc="./assets/PlayOff.png" midSrc="./assets/PlayMid2.png" onSrc="./assets/PlayOn.png"
+          secondaryActive={generating} secondaryMidSrc="./assets/PlayMid1.png" secondaryOnSrc="./assets/PlayMid2.png" />
+        <RecorderButton active={rewinding} glow={recGlow}
+          offSrc="./assets/RewindOff.png" midSrc="./assets/RewindMid2.png" onSrc="./assets/RewindOn.png" />
 
         {/* Invisible click zones positioned over each button */}
         <div className="recorder__click-zone recorder__click-zone--record" style={{ zIndex: 20 }} onClick={onToggleRecord} />

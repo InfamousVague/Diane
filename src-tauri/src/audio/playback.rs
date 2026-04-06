@@ -38,6 +38,74 @@ struct SinkHolder(Option<Sink>);
 unsafe impl Send for SinkHolder {}
 unsafe impl Sync for SinkHolder {}
 
+/// Spawns a thread that ramps a speed value from 0.5 to 8.0 over 1200ms
+/// using a quadratic ease-in curve. Used by both rewind and fast-forward.
+fn spawn_speed_ramp(speed: Arc<Mutex<f32>>, active: Arc<AtomicBool>) {
+    std::thread::spawn(move || {
+        let start = std::time::Instant::now();
+        let ramp_ms = 1200.0;
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(16));
+            if !active.load(Ordering::Relaxed) {
+                break;
+            }
+            let elapsed = start.elapsed().as_millis() as f32;
+            let t = (elapsed / ramp_ms).min(1.0);
+            let s = 0.5 + 7.5 * t * t;
+            if let Ok(mut spd) = speed.lock() {
+                *spd = s;
+            }
+            if t >= 1.0 {
+                break;
+            }
+        }
+    });
+}
+
+/// Spawns a thread that polls the playback position and stops the sink
+/// when a boundary condition is met (`check` returns true).
+fn spawn_position_monitor(
+    check: impl Fn(usize) -> bool + Send + 'static,
+    end_state: PlaybackState,
+    position: Arc<AtomicUsize>,
+    active: Arc<AtomicBool>,
+    state: Arc<Mutex<PlaybackState>>,
+    level: Arc<Mutex<f32>>,
+    sink: Arc<Mutex<SinkHolder>>,
+    stream: Arc<Mutex<StreamHolder>>,
+    handle: Arc<Mutex<HandleHolder>>,
+) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if !active.load(Ordering::Relaxed) {
+                break;
+            }
+            if check(position.load(Ordering::Relaxed)) {
+                active.store(false, Ordering::Relaxed);
+                if let Ok(mut s) = sink.lock() {
+                    if let Some(sink) = s.0.take() {
+                        sink.stop();
+                    }
+                }
+                if let Ok(mut s) = stream.lock() {
+                    s.0 = None;
+                }
+                if let Ok(mut h) = handle.lock() {
+                    h.0 = None;
+                }
+                if let Ok(mut st) = state.lock() {
+                    *st = end_state;
+                }
+                if let Ok(mut lv) = level.lock() {
+                    *lv = 0.0;
+                }
+                break;
+            }
+        }
+    });
+}
+
 pub struct AudioPlayer {
     state: Arc<Mutex<PlaybackState>>,
     level: Arc<Mutex<f32>>,
@@ -49,14 +117,15 @@ pub struct AudioPlayer {
     position: Arc<AtomicUsize>,
     /// Whether audio source should be actively producing samples
     active: Arc<AtomicBool>,
-    /// Rewind speed multiplier (0.0 = stopped, 4.0 = fast)
-    rewind_speed: Arc<Mutex<f32>>,
+    /// Speed multiplier for rewind/fast-forward (0.0 = stopped, 8.0 = max)
+    speed: Arc<Mutex<f32>>,
     _stream: Arc<Mutex<StreamHolder>>,
     stream_handle: Arc<Mutex<HandleHolder>>,
     sink: Arc<Mutex<SinkHolder>>,
 }
 
 impl AudioPlayer {
+    /// Create a new audio player with no tape loaded.
     pub fn new() -> Self {
         Self {
             state: Arc::new(Mutex::new(PlaybackState::Idle)),
@@ -66,21 +135,27 @@ impl AudioPlayer {
             channels: 1,
             position: Arc::new(AtomicUsize::new(0)),
             active: Arc::new(AtomicBool::new(false)),
-            rewind_speed: Arc::new(Mutex::new(0.0)),
+            speed: Arc::new(Mutex::new(0.0)),
             _stream: Arc::new(Mutex::new(StreamHolder(None))),
             stream_handle: Arc::new(Mutex::new(HandleHolder(None))),
             sink: Arc::new(Mutex::new(SinkHolder(None))),
         }
     }
 
+    /// Return the current playback state as a string identifier.
     pub fn get_state(&self) -> String {
-        self.state.lock().unwrap().as_str().to_string()
+        self.state
+            .lock()
+            .map(|s| s.as_str().to_string())
+            .unwrap_or_else(|_| "idle".to_string())
     }
 
+    /// Return the current audio level (0.0 to 1.0).
     pub fn get_level(&self) -> f32 {
-        *self.level.lock().unwrap()
+        self.level.lock().map(|l| *l).unwrap_or(0.0)
     }
 
+    /// Return the current playback position as a fraction (0.0 to 1.0).
     pub fn get_position(&self) -> f32 {
         let total = self.samples.len();
         if total == 0 {
@@ -90,6 +165,7 @@ impl AudioPlayer {
         (pos as f32 / total as f32).min(1.0)
     }
 
+    /// Return the current playback position in seconds.
     pub fn get_position_secs(&self) -> f32 {
         if self.sample_rate == 0 || self.channels == 0 {
             return 0.0;
@@ -98,7 +174,7 @@ impl AudioPlayer {
         pos as f32 / (self.sample_rate as f32 * self.channels as f32)
     }
 
-    /// Load a WAV file into memory for instant playback/rewind
+    /// Load a WAV file into memory for instant playback/rewind.
     pub fn load_tape(&mut self, path: &str) -> Result<(), String> {
         self.stop();
 
@@ -122,12 +198,50 @@ impl AudioPlayer {
         self.sample_rate = sample_rate;
         self.channels = channels;
         self.position.store(0, Ordering::Relaxed);
-        *self.state.lock().unwrap() = PlaybackState::Idle;
+        if let Ok(mut st) = self.state.lock() {
+            *st = PlaybackState::Idle;
+        }
 
         Ok(())
     }
 
-    /// Play forward from current position
+    /// Build a `BufferSource` with the player's shared state and the given direction.
+    fn make_source(&self, direction: Direction) -> BufferSource {
+        BufferSource {
+            samples: self.samples.clone(),
+            position: self.position.clone(),
+            active: self.active.clone(),
+            level: self.level.clone(),
+            direction,
+            speed: self.speed.clone(),
+            sample_rate: self.sample_rate,
+            channels: self.channels,
+            cached_speed: 1.0,
+            level_accum: 0.0,
+            level_count: 0,
+        }
+    }
+
+    /// Spawn a position monitor thread using this player's shared state.
+    fn monitor_position(
+        &self,
+        check: impl Fn(usize) -> bool + Send + 'static,
+        end_state: PlaybackState,
+    ) {
+        spawn_position_monitor(
+            check,
+            end_state,
+            self.position.clone(),
+            self.active.clone(),
+            self.state.clone(),
+            self.level.clone(),
+            self.sink.clone(),
+            self._stream.clone(),
+            self.stream_handle.clone(),
+        );
+    }
+
+    /// Play forward from the current position.
     pub fn play(&self) -> Result<(), String> {
         self.stop_audio();
 
@@ -136,62 +250,34 @@ impl AudioPlayer {
         }
 
         if self.position.load(Ordering::Relaxed) >= self.samples.len() {
-            *self.state.lock().unwrap() = PlaybackState::Finished;
+            if let Ok(mut st) = self.state.lock() {
+                *st = PlaybackState::Finished;
+            }
             return Ok(());
         }
 
         let total_samples = self.samples.len();
-        let source = BufferSource {
-            samples: self.samples.clone(),
-            position: self.position.clone(),
-            active: self.active.clone(),
-            level: self.level.clone(),
-            direction: Direction::Forward,
-            rewind_speed: self.rewind_speed.clone(),
-            sample_rate: self.sample_rate,
-            channels: self.channels,
-            cached_rewind_speed: 1.0,
-            level_accum: 0.0,
-            level_count: 0,
-        };
+        let source = self.make_source(Direction::Forward);
 
         self.active.store(true, Ordering::Relaxed);
         self.start_source(source)?;
-        *self.state.lock().unwrap() = PlaybackState::Playing;
+        if let Ok(mut st) = self.state.lock() {
+            *st = PlaybackState::Playing;
+        }
 
-        // Monitor for reaching the end
-        let state = self.state.clone();
-        let position = self.position.clone();
-        let active = self.active.clone();
-        let level = self.level.clone();
-        let sink_ref = self.sink.clone();
-        let stream_ref = self._stream.clone();
-        let handle_ref = self.stream_handle.clone();
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                if !active.load(Ordering::Relaxed) {
-                    break;
-                }
-                if position.load(Ordering::Relaxed) >= total_samples {
-                    active.store(false, Ordering::Relaxed);
-                    if let Some(sink) = sink_ref.lock().unwrap().0.take() {
-                        sink.stop();
-                    }
-                    stream_ref.lock().unwrap().0 = None;
-                    handle_ref.lock().unwrap().0 = None;
-                    *state.lock().unwrap() = PlaybackState::Finished;
-                    *level.lock().unwrap() = 0.0;
-                    break;
-                }
-            }
-        });
+        self.monitor_position(
+            move |pos| pos >= total_samples,
+            PlaybackState::Finished,
+        );
 
-        log::info!("Playing from sample {}", self.position.load(Ordering::Relaxed));
+        log::info!(
+            "Playing from sample {}",
+            self.position.load(Ordering::Relaxed)
+        );
         Ok(())
     }
 
-    /// Begin rewinding — speed ramps up
+    /// Begin rewinding with speed ramp from 0.5x to 8.0x.
     pub fn start_rewind(&self) -> Result<(), String> {
         self.stop_audio();
 
@@ -203,82 +289,30 @@ impl AudioPlayer {
             return Ok(());
         }
 
-        *self.rewind_speed.lock().unwrap() = 0.5;
+        if let Ok(mut s) = self.speed.lock() {
+            *s = 0.5;
+        }
 
-        let source = BufferSource {
-            samples: self.samples.clone(),
-            position: self.position.clone(),
-            active: self.active.clone(),
-            level: self.level.clone(),
-            direction: Direction::Reverse,
-            rewind_speed: self.rewind_speed.clone(),
-            sample_rate: self.sample_rate,
-            channels: self.channels,
-            cached_rewind_speed: 1.0,
-            level_accum: 0.0,
-            level_count: 0,
-        };
+        let source = self.make_source(Direction::Reverse);
 
         self.active.store(true, Ordering::Relaxed);
         self.start_source(source)?;
-        *self.state.lock().unwrap() = PlaybackState::Rewinding;
+        if let Ok(mut st) = self.state.lock() {
+            *st = PlaybackState::Rewinding;
+        }
 
-        // Ramp speed: 0.5 → 8.0 over 1200ms
-        let speed = self.rewind_speed.clone();
-        let active = self.active.clone();
-        std::thread::spawn(move || {
-            let start = std::time::Instant::now();
-            let ramp_ms = 1200.0;
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(16));
-                if !active.load(Ordering::Relaxed) {
-                    break;
-                }
-                let elapsed = start.elapsed().as_millis() as f32;
-                let t = (elapsed / ramp_ms).min(1.0);
-                let s = 0.5 + 7.5 * t * t;
-                *speed.lock().unwrap() = s;
-                if t >= 1.0 {
-                    break;
-                }
-            }
-        });
+        spawn_speed_ramp(self.speed.clone(), self.active.clone());
 
-        // Monitor for reaching position 0
-        let state = self.state.clone();
-        let position = self.position.clone();
-        let active2 = self.active.clone();
-        let level = self.level.clone();
-        let sink_ref = self.sink.clone();
-        let stream_ref = self._stream.clone();
-        let handle_ref = self.stream_handle.clone();
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                if !active2.load(Ordering::Relaxed) {
-                    break;
-                }
-                if position.load(Ordering::Relaxed) == 0 {
-                    active2.store(false, Ordering::Relaxed);
-                    // Stop the audio sink completely
-                    if let Some(sink) = sink_ref.lock().unwrap().0.take() {
-                        sink.stop();
-                    }
-                    stream_ref.lock().unwrap().0 = None;
-                    handle_ref.lock().unwrap().0 = None;
-                    *state.lock().unwrap() = PlaybackState::Idle;
-                    *level.lock().unwrap() = 0.0;
-                    log::info!("Rewind reached beginning, stopped");
-                    break;
-                }
-            }
-        });
+        self.monitor_position(|pos| pos == 0, PlaybackState::Idle);
 
-        log::info!("Rewinding from sample {}", self.position.load(Ordering::Relaxed));
+        log::info!(
+            "Rewinding from sample {}",
+            self.position.load(Ordering::Relaxed)
+        );
         Ok(())
     }
 
-    /// Begin fast-forwarding — same ramp as rewind but forward
+    /// Begin fast-forwarding with speed ramp from 0.5x to 8.0x.
     pub fn start_fast_forward(&self) -> Result<(), String> {
         self.stop_audio();
 
@@ -290,91 +324,42 @@ impl AudioPlayer {
             return Ok(());
         }
 
-        *self.rewind_speed.lock().unwrap() = 0.5;
+        if let Ok(mut s) = self.speed.lock() {
+            *s = 0.5;
+        }
 
-        let source = BufferSource {
-            samples: self.samples.clone(),
-            position: self.position.clone(),
-            active: self.active.clone(),
-            level: self.level.clone(),
-            direction: Direction::FastForward,
-            rewind_speed: self.rewind_speed.clone(),
-            sample_rate: self.sample_rate,
-            channels: self.channels,
-            cached_rewind_speed: 1.0,
-            level_accum: 0.0,
-            level_count: 0,
-        };
+        let source = self.make_source(Direction::FastForward);
+        let total = self.samples.len();
 
         self.active.store(true, Ordering::Relaxed);
         self.start_source(source)?;
-        *self.state.lock().unwrap() = PlaybackState::FastForward;
+        if let Ok(mut st) = self.state.lock() {
+            *st = PlaybackState::FastForward;
+        }
 
-        // Ramp speed: 0.5 → 8.0 over 1200ms
-        let speed = self.rewind_speed.clone();
-        let active = self.active.clone();
-        std::thread::spawn(move || {
-            let start = std::time::Instant::now();
-            let ramp_ms = 1200.0;
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(16));
-                if !active.load(Ordering::Relaxed) {
-                    break;
-                }
-                let elapsed = start.elapsed().as_millis() as f32;
-                let t = (elapsed / ramp_ms).min(1.0);
-                let s = 0.5 + 7.5 * t * t;
-                *speed.lock().unwrap() = s;
-                if t >= 1.0 {
-                    break;
-                }
-            }
-        });
+        spawn_speed_ramp(self.speed.clone(), self.active.clone());
 
-        // Monitor for reaching the end
-        let total = self.samples.len();
-        let state = self.state.clone();
-        let position = self.position.clone();
-        let active2 = self.active.clone();
-        let level = self.level.clone();
-        let sink_ref = self.sink.clone();
-        let stream_ref = self._stream.clone();
-        let handle_ref = self.stream_handle.clone();
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                if !active2.load(Ordering::Relaxed) {
-                    break;
-                }
-                if position.load(Ordering::Relaxed) >= total {
-                    active2.store(false, Ordering::Relaxed);
-                    if let Some(sink) = sink_ref.lock().unwrap().0.take() {
-                        sink.stop();
-                    }
-                    stream_ref.lock().unwrap().0 = None;
-                    handle_ref.lock().unwrap().0 = None;
-                    *state.lock().unwrap() = PlaybackState::Finished;
-                    *level.lock().unwrap() = 0.0;
-                    log::info!("Fast-forward reached end, stopped");
-                    break;
-                }
-            }
-        });
+        self.monitor_position(move |pos| pos >= total, PlaybackState::Finished);
 
-        log::info!("Fast-forwarding from sample {}", self.position.load(Ordering::Relaxed));
+        log::info!(
+            "Fast-forwarding from sample {}",
+            self.position.load(Ordering::Relaxed)
+        );
         Ok(())
     }
 
-    /// Stop rewinding with momentum deceleration
+    /// Stop rewinding with momentum deceleration.
     pub fn stop_rewind(&self) {
-        let current_speed = *self.rewind_speed.lock().unwrap();
+        let current_speed = self.speed.lock().map(|s| *s).unwrap_or(0.0);
         if current_speed <= 0.0 {
             self.stop_audio();
-            *self.state.lock().unwrap() = PlaybackState::Idle;
+            if let Ok(mut st) = self.state.lock() {
+                *st = PlaybackState::Idle;
+            }
             return;
         }
 
-        let speed = self.rewind_speed.clone();
+        let speed = self.speed.clone();
         let active = self.active.clone();
         let state = self.state.clone();
         let level = self.level.clone();
@@ -387,44 +372,62 @@ impl AudioPlayer {
                 let elapsed = start.elapsed().as_millis() as f32;
                 let t = (elapsed / decel_ms).min(1.0);
                 let s = start_speed * (1.0 - t * t);
-                *speed.lock().unwrap() = s;
+                if let Ok(mut spd) = speed.lock() {
+                    *spd = s;
+                }
                 if t >= 1.0 || s < 0.05 {
-                    *speed.lock().unwrap() = 0.0;
+                    if let Ok(mut spd) = speed.lock() {
+                        *spd = 0.0;
+                    }
                     active.store(false, Ordering::Relaxed);
-                    *state.lock().unwrap() = PlaybackState::Idle;
-                    *level.lock().unwrap() = 0.0;
+                    if let Ok(mut st) = state.lock() {
+                        *st = PlaybackState::Idle;
+                    }
+                    if let Ok(mut lv) = level.lock() {
+                        *lv = 0.0;
+                    }
                     break;
                 }
             }
         });
     }
 
-    /// Seek to a position (0.0–1.0)
+    /// Seek to a position expressed as a fraction (0.0 to 1.0).
     pub fn seek_to(&self, progress: f32) {
         let pos = (progress.clamp(0.0, 1.0) * self.samples.len() as f32) as usize;
         self.position.store(pos, Ordering::Relaxed);
         log::info!("Seeked to {:.1}% (sample {})", progress * 100.0, pos);
     }
 
-    /// Seek to end of tape
+    /// Seek to the end of the tape.
     pub fn seek_to_end(&self) {
         self.position.store(self.samples.len(), Ordering::Relaxed);
     }
 
-    /// Stop all audio output
+    /// Stop all audio output and reset to idle.
     pub fn stop(&self) {
         self.stop_audio();
-        *self.state.lock().unwrap() = PlaybackState::Idle;
-        *self.level.lock().unwrap() = 0.0;
+        if let Ok(mut st) = self.state.lock() {
+            *st = PlaybackState::Idle;
+        }
+        if let Ok(mut lv) = self.level.lock() {
+            *lv = 0.0;
+        }
     }
 
     fn stop_audio(&self) {
         self.active.store(false, Ordering::Relaxed);
-        if let Some(sink) = self.sink.lock().unwrap().0.take() {
-            sink.stop();
+        if let Ok(mut s) = self.sink.lock() {
+            if let Some(sink) = s.0.take() {
+                sink.stop();
+            }
         }
-        self._stream.lock().unwrap().0 = None;
-        self.stream_handle.lock().unwrap().0 = None;
+        if let Ok(mut s) = self._stream.lock() {
+            s.0 = None;
+        }
+        if let Ok(mut h) = self.stream_handle.lock() {
+            h.0 = None;
+        }
     }
 
     fn start_source(&self, source: BufferSource) -> Result<(), String> {
@@ -433,15 +436,21 @@ impl AudioPlayer {
         let sink = Sink::try_new(&handle).map_err(|e| format!("Can't create sink: {}", e))?;
         sink.append(source);
 
-        self._stream.lock().unwrap().0 = Some(stream);
-        self.stream_handle.lock().unwrap().0 = Some(handle);
-        self.sink.lock().unwrap().0 = Some(sink);
+        if let Ok(mut s) = self._stream.lock() {
+            s.0 = Some(stream);
+        }
+        if let Ok(mut h) = self.stream_handle.lock() {
+            h.0 = Some(handle);
+        }
+        if let Ok(mut s) = self.sink.lock() {
+            s.0 = Some(sink);
+        }
 
         Ok(())
     }
 }
 
-/// Truncate a WAV file at the given time in seconds
+/// Truncate a WAV file at the given time in seconds.
 pub fn truncate_audio(path: &str, at_secs: f32) -> Result<String, String> {
     let file = File::open(path).map_err(|e| format!("Can't open: {}", e))?;
     let reader = BufReader::new(file);
@@ -497,12 +506,39 @@ struct BufferSource {
     active: Arc<AtomicBool>,
     level: Arc<Mutex<f32>>,
     direction: Direction,
-    rewind_speed: Arc<Mutex<f32>>,
-    cached_rewind_speed: f32,
+    speed: Arc<Mutex<f32>>,
+    cached_speed: f32,
     sample_rate: u32,
     channels: u16,
     level_accum: f32,
     level_count: u32,
+}
+
+impl BufferSource {
+    /// Accumulate a sample into the level meter, flushing to the shared
+    /// level value every `window` samples.
+    fn meter_level(&mut self, sample: f32, window: u32) {
+        self.level_accum += sample * sample;
+        self.level_count += 1;
+        if self.level_count >= window {
+            let rms = (self.level_accum / self.level_count as f32).sqrt();
+            if let Ok(mut lv) = self.level.lock() {
+                *lv = (rms * 10.0).min(1.0);
+            }
+            self.level_accum = 0.0;
+            self.level_count = 0;
+        }
+    }
+
+    /// Read the shared speed value, but only every 256 samples to reduce
+    /// lock contention on the audio thread.
+    fn refresh_cached_speed(&mut self) {
+        if self.level_count % 256 == 0 {
+            if let Ok(s) = self.speed.lock() {
+                self.cached_speed = *s;
+            }
+        }
+    }
 }
 
 impl Iterator for BufferSource {
@@ -523,55 +559,29 @@ impl Iterator for BufferSource {
                 }
                 let sample = self.samples[pos];
                 self.position.store(pos + 1, Ordering::Relaxed);
-
-                // Level metering (lock-free accumulation, periodic mutex update)
-                self.level_accum += sample * sample;
-                self.level_count += 1;
-                if self.level_count >= 1024 {
-                    let rms = (self.level_accum / self.level_count as f32).sqrt();
-                    *self.level.lock().unwrap() = (rms * 10.0).min(1.0);
-                    self.level_accum = 0.0;
-                    self.level_count = 0;
-                }
-
+                self.meter_level(sample, 1024);
                 Some(sample)
             }
             Direction::Reverse => {
-                // Read rewind speed — only lock every ~256 samples for performance
-                if self.level_count % 256 == 0 {
-                    self.cached_rewind_speed = *self.rewind_speed.lock().unwrap();
-                }
-                let speed = self.cached_rewind_speed;
+                self.refresh_cached_speed();
+                let speed = self.cached_speed;
 
                 if pos == 0 {
                     self.active.store(false, Ordering::Relaxed);
                     return Some(0.0);
                 }
 
-                // Skip samples based on speed
                 let skip = (speed as usize).max(1);
                 let new_pos = pos.saturating_sub(skip);
                 self.position.store(new_pos, Ordering::Relaxed);
 
                 let sample = self.samples[new_pos];
-
-                // Level metering
-                self.level_accum += sample * sample;
-                self.level_count += 1;
-                if self.level_count >= 512 {
-                    let rms = (self.level_accum / self.level_count as f32).sqrt();
-                    *self.level.lock().unwrap() = (rms * 10.0).min(1.0);
-                    self.level_accum = 0.0;
-                    self.level_count = 0;
-                }
-
-                Some(sample * 0.6) // Slightly quieter rewind
+                self.meter_level(sample, 512);
+                Some(sample * 0.6)
             }
             Direction::FastForward => {
-                if self.level_count % 256 == 0 {
-                    self.cached_rewind_speed = *self.rewind_speed.lock().unwrap();
-                }
-                let speed = self.cached_rewind_speed;
+                self.refresh_cached_speed();
+                let speed = self.cached_speed;
 
                 if pos >= self.samples.len() {
                     self.active.store(false, Ordering::Relaxed);
@@ -583,16 +593,7 @@ impl Iterator for BufferSource {
                 self.position.store(new_pos, Ordering::Relaxed);
 
                 let sample = self.samples[new_pos];
-
-                self.level_accum += sample * sample;
-                self.level_count += 1;
-                if self.level_count >= 512 {
-                    let rms = (self.level_accum / self.level_count as f32).sqrt();
-                    *self.level.lock().unwrap() = (rms * 10.0).min(1.0);
-                    self.level_accum = 0.0;
-                    self.level_count = 0;
-                }
-
+                self.meter_level(sample, 512);
                 Some(sample * 0.6)
             }
         }

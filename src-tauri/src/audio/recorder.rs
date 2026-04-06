@@ -1,7 +1,8 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, Mutex};
 
-/// Thread-safe wrapper for cpal::Stream
+/// Thread-safe wrapper for cpal::Stream (held to keep stream alive)
+#[allow(dead_code)]
 struct StreamHolder(cpal::Stream);
 unsafe impl Send for StreamHolder {}
 unsafe impl Sync for StreamHolder {}
@@ -122,6 +123,7 @@ impl AudioRecorder {
     }
 
     /// Reset the accumulated buffer (when ejecting/saving a tape)
+    #[allow(dead_code)]
     pub fn reset_all_samples(&self) {
         self.all_samples.lock().unwrap().clear();
     }

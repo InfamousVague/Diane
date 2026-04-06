@@ -27,10 +27,12 @@ impl DesktopCapture {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_capturing(&self) -> bool {
         self.capturing.load(Ordering::Relaxed)
     }
 
+    #[allow(dead_code)]
     pub fn permission_denied(&self) -> bool {
         self.permission_denied.load(Ordering::Relaxed)
     }

@@ -7,6 +7,7 @@ use std::thread;
 pub struct AudioEvent {
     pub timestamp_ms: u64,
     pub label: String,
+    #[allow(dead_code)]
     pub confidence: f32,
 }
 
