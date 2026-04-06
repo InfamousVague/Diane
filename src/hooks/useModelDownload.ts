@@ -5,6 +5,10 @@ export function useModelDownload() {
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
+    // Request microphone permission on first launch (triggers macOS prompt)
+    invoke<string>("request_mic_permission").catch(() => {});
+
+    // Check and download Whisper model if needed
     invoke<boolean>("check_models_ready")
       .then((ready) => {
         if (!ready) {

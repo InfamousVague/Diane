@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 export function useDictation() {
   const [dictating, setDictating] = useState(false);
@@ -26,9 +27,40 @@ export function useDictation() {
     }
   }, []);
 
-  const toggleDesktopAudio = useCallback(() => {
-    setDesktopAudio((prev) => !prev);
-  }, []);
+  const toggleDesktopAudio = useCallback(async () => {
+    const next = !desktopAudio;
+    if (next) {
+      try {
+        const result = await invoke<string>("enable_desktop_capture");
+        if (result === "permission_denied") {
+          // Wait a moment for the permission status to settle, then check again
+          setTimeout(async () => {
+            const retry = await invoke<string>("enable_desktop_capture");
+            if (retry === "permission_denied") {
+              alert(
+                "Screen Recording permission is required for desktop audio capture.\n\n" +
+                "Go to System Settings → Privacy & Security → Screen Recording and enable Diane."
+              );
+              setDesktopAudio(false);
+            } else {
+              setDesktopAudio(true);
+            }
+          }, 2000);
+          return;
+        }
+        setDesktopAudio(true);
+      } catch (e) {
+        console.error("Failed to enable desktop capture:", e);
+        alert(
+          "Desktop audio capture failed to start.\n\n" +
+          "Make sure Screen Recording permission is granted in System Settings → Privacy & Security."
+        );
+      }
+    } else {
+      invoke("disable_desktop_capture").catch(() => {});
+      setDesktopAudio(false);
+    }
+  }, [desktopAudio]);
 
   return {
     dictating,

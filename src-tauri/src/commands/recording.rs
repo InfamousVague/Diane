@@ -16,11 +16,7 @@ pub fn start_recording(state: tauri::State<'_, AppState>) -> Result<(), String> 
         log::warn!("Audio event detector failed to start: {}", e);
     }
 
-    // Start desktop audio capture
-    let mut desktop = lock(&state.desktop_capture)?;
-    if let Err(e) = desktop.start() {
-        log::warn!("Desktop audio capture failed to start: {}", e);
-    }
+    // Desktop audio capture is started separately via toggle_desktop_capture command
 
     Ok(())
 }
