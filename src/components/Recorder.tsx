@@ -5,22 +5,24 @@ interface Props {
   recording: boolean;
   audioLevel: number;
   dictating: boolean;
+  desktopAudio: boolean;
   playing: boolean;
   generating: boolean;
   rewinding: boolean;
   forwarding: boolean;
   playbackLevel: number;
   onToggleDictation: () => void;
+  onToggleDesktopAudio: () => void;
   onPlay: () => void;
   onToggleRecord: () => void;
   onRewindStart: () => void;
   onRewindStop: () => void;
   onForwardStart: () => void;
   onForwardStop: () => void;
-  tapeProgress: number; // 0.0 = all tape on left reel, 1.0 = all on right
+  tapeProgress: number;
 }
 
-export function Recorder({ recording, audioLevel, dictating, playing, generating, rewinding, forwarding, playbackLevel, onToggleDictation, onPlay, onToggleRecord, onRewindStart, onRewindStop, onForwardStart, onForwardStop, tapeProgress }: Props) {
+export function Recorder({ recording, audioLevel, dictating, desktopAudio, playing, generating, rewinding, forwarding, playbackLevel, onToggleDictation, onToggleDesktopAudio, onPlay, onToggleRecord, onRewindStart, onRewindStop, onForwardStart, onForwardStop, tapeProgress }: Props) {
   const [reelAngle, setReelAngle] = useState(0);
   const animRef = useRef(0);
 
@@ -200,15 +202,25 @@ export function Recorder({ recording, audioLevel, dictating, playing, generating
         <img src="./assets/SwitchTrayOn.png" className="recorder__layer" style={{ zIndex: 10, opacity: dictating ? 1 : 0 }} alt="" draggable={false} />
         <img
           src="./assets/SwitchOff.png"
-          className="recorder__layer recorder__layer--interactive recorder__switch-knob"
-          style={{ zIndex: 11, transform: dictating ? "translateX(-58px)" : "translateX(0)" }}
+          className="recorder__layer recorder__switch-knob"
+          style={{ zIndex: 13, transform: dictating ? "translateX(-58px)" : "translateX(0)" }}
           alt=""
           draggable={false}
-          onClick={onToggleDictation}
         />
+        {/* Click zone for dictation switch — only covers the switch area */}
+        <div className="recorder__click-zone recorder__click-zone--switch" style={{ zIndex: 20 }}
+          onClick={onToggleDictation} />
+
+        {/* Line In (desktop audio) toggle — PNG layers */}
+        <img src="./assets/LineInOff.png" className="recorder__layer"
+          style={{ zIndex: 12, opacity: desktopAudio ? 0 : 1 }} alt="" draggable={false} />
+        <img src="./assets/LineInOn.png" className="recorder__layer"
+          style={{ zIndex: 12, opacity: desktopAudio ? 1 : 0 }} alt="" draggable={false} />
+        <div className="recorder__click-zone recorder__click-zone--linein" style={{ zIndex: 20 }}
+          onClick={onToggleDesktopAudio} />
 
         {/* Hotkey hint */}
-        <div className="recorder__hotkey-hint" style={{ zIndex: 12 }}>
+        <div className="recorder__hotkey-hint" style={{ zIndex: 15 }}>
           {recording ? "⌘⇧R to stop" : "⌘⇧R to record"}
         </div>
       </div>

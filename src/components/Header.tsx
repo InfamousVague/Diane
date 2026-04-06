@@ -30,6 +30,7 @@ const HOTKEYS = [
   { keys: "⌘⇧S", action: "Force Stop" },
   { keys: "⌘⇧E", action: "Save Tape" },
   { keys: "⌘⇧T", action: "Dictation Mode" },
+  { keys: "⌘⇧A", action: "Desktop Audio" },
   { keys: "⌘⇧P", action: "Play Tape" },
   { keys: "⌘⇧←", action: "Previous Tape" },
   { keys: "⌘⇧→", action: "Next Tape" },
@@ -47,27 +48,27 @@ export function Header({ recordings, onSelectTape, selectedTape, liveTranscript,
           {recordings.length > 0 ? `${recordings.length} tape${recordings.length !== 1 ? "s" : ""}` : "No tapes"}
           {dictating && <span className="diane-header__dict-badge">DICT</span>}
         </span>
-        <button
-          className="diane-header__help-btn"
-          onClick={() => setShowHelp(!showHelp)}
-          title="Keyboard shortcuts"
-        >
-          ?
-        </button>
-      </div>
-
-      {/* Help overlay */}
-      {showHelp && (
-        <div className="diane-header__help">
-          <span className="diane-header__help-title">Keyboard Shortcuts</span>
-          {HOTKEYS.map((h) => (
-            <div key={h.keys} className="diane-header__help-row">
-              <kbd className="diane-header__kbd">{h.keys}</kbd>
-              <span className="diane-header__help-action">{h.action}</span>
+        <div className="diane-header__help-anchor">
+          <button
+            className="diane-header__help-btn"
+            onClick={() => setShowHelp(!showHelp)}
+            title="Keyboard shortcuts"
+          >
+            ?
+          </button>
+          {showHelp && (
+            <div className="diane-header__help">
+              <span className="diane-header__help-title">Keyboard Shortcuts</span>
+              {HOTKEYS.map((h) => (
+                <div key={h.keys} className="diane-header__help-row">
+                  <kbd className="diane-header__kbd">{h.keys}</kbd>
+                  <span className="diane-header__help-action">{h.action}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
-      )}
+      </div>
 
       {/* Tape carousel — 3D fan */}
       {(recordings.length > 0 || liveTranscript || selectedTape === null) && (
@@ -87,7 +88,7 @@ export function Header({ recordings, onSelectTape, selectedTape, liveTranscript,
                     draggable={false}
                   />
                   <span className="diane-header__tape-label">
-                    {recording ? "Recording" : liveTranscript ? "Unsaved" : "Blank"}
+                    {recording ? "Recording" : liveTranscript ? "Unsaved" : "Empty Tape"}
                     {liveTranscript ? ` · ${liveTranscript.split(/\s+/).filter(Boolean).length} w` : ""}
                   </span>
                 </div>

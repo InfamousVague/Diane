@@ -52,6 +52,20 @@ impl AudioEventDetector {
 
         let stdin = child.stdin.take();
         let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Log stderr from Python in background
+        if let Some(stderr) = stderr {
+            thread::spawn(move || {
+                use std::io::{BufRead, BufReader};
+                let reader = BufReader::new(stderr);
+                for line in reader.lines() {
+                    if let Ok(line) = line {
+                        log::warn!("Audio events stderr: {}", line);
+                    }
+                }
+            });
+        }
 
         // Read events from stdout in background
         let events = self.events.clone();

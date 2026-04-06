@@ -164,6 +164,9 @@ impl AudioPlayer {
         let position = self.position.clone();
         let active = self.active.clone();
         let level = self.level.clone();
+        let sink_ref = self.sink.clone();
+        let stream_ref = self._stream.clone();
+        let handle_ref = self.stream_handle.clone();
         std::thread::spawn(move || {
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -172,6 +175,11 @@ impl AudioPlayer {
                 }
                 if position.load(Ordering::Relaxed) >= total_samples {
                     active.store(false, Ordering::Relaxed);
+                    if let Some(sink) = sink_ref.lock().unwrap().0.take() {
+                        sink.stop();
+                    }
+                    stream_ref.lock().unwrap().0 = None;
+                    handle_ref.lock().unwrap().0 = None;
                     *state.lock().unwrap() = PlaybackState::Finished;
                     *level.lock().unwrap() = 0.0;
                     break;
@@ -241,6 +249,9 @@ impl AudioPlayer {
         let position = self.position.clone();
         let active2 = self.active.clone();
         let level = self.level.clone();
+        let sink_ref = self.sink.clone();
+        let stream_ref = self._stream.clone();
+        let handle_ref = self.stream_handle.clone();
         std::thread::spawn(move || {
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -249,8 +260,15 @@ impl AudioPlayer {
                 }
                 if position.load(Ordering::Relaxed) == 0 {
                     active2.store(false, Ordering::Relaxed);
+                    // Stop the audio sink completely
+                    if let Some(sink) = sink_ref.lock().unwrap().0.take() {
+                        sink.stop();
+                    }
+                    stream_ref.lock().unwrap().0 = None;
+                    handle_ref.lock().unwrap().0 = None;
                     *state.lock().unwrap() = PlaybackState::Idle;
                     *level.lock().unwrap() = 0.0;
+                    log::info!("Rewind reached beginning, stopped");
                     break;
                 }
             }
@@ -319,6 +337,9 @@ impl AudioPlayer {
         let position = self.position.clone();
         let active2 = self.active.clone();
         let level = self.level.clone();
+        let sink_ref = self.sink.clone();
+        let stream_ref = self._stream.clone();
+        let handle_ref = self.stream_handle.clone();
         std::thread::spawn(move || {
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -327,8 +348,14 @@ impl AudioPlayer {
                 }
                 if position.load(Ordering::Relaxed) >= total {
                     active2.store(false, Ordering::Relaxed);
+                    if let Some(sink) = sink_ref.lock().unwrap().0.take() {
+                        sink.stop();
+                    }
+                    stream_ref.lock().unwrap().0 = None;
+                    handle_ref.lock().unwrap().0 = None;
                     *state.lock().unwrap() = PlaybackState::Finished;
                     *level.lock().unwrap() = 0.0;
+                    log::info!("Fast-forward reached end, stopped");
                     break;
                 }
             }

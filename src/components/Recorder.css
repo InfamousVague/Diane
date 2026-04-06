@@ -121,6 +121,20 @@
   height: 17%;
 }
 
+.recorder__click-zone--switch {
+  left: 54%;
+  top: 8%;
+  width: 23%;
+  height: 12%;
+}
+
+.recorder__click-zone--linein {
+  left: 15%;
+  top: 7%;
+  width: 20%;
+  height: 11%;
+}
+
 /* Dictation switch */
 .recorder__switch-knob {
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);

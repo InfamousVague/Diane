@@ -49,7 +49,17 @@ FRIENDLY_NAMES = {
     "Car": "car",
     "Siren": "siren",
     "Alarm": "alarm",
-    "Bell": "bell",
+    "Bell": "bell ringing",
+    "Bicycle bell": "bicycle bell",
+    "Church bell": "church bell",
+    "Jingle bell": "jingle bell",
+    "Ding": "ding",
+    "Ding-dong": "ding-dong",
+    "Chime": "chime",
+    "Tubular bells": "tubular bells",
+    "Change ringing (campanology)": "bell ringing",
+    "Cowbell": "cowbell",
+    "Sine wave": None,  # not useful
     "Telephone": "phone ringing",
     "Typing": "typing",
     "Writing": "writing",
@@ -97,10 +107,11 @@ FRIENDLY_NAMES = {
 }
 
 # Minimum confidence to report an event
-MIN_CONFIDENCE = 0.3
+MIN_CONFIDENCE = 0.15
 
-# Chunk size: 2 seconds at 16kHz mono 16-bit = 64000 bytes
-CHUNK_SAMPLES = 32000
+# Chunk size: 1 second at 16kHz mono 16-bit = 32000 bytes
+# (shorter chunks = more responsive detection, AST handles variable lengths)
+CHUNK_SAMPLES = 16000
 CHUNK_BYTES = CHUNK_SAMPLES * 2  # 16-bit = 2 bytes per sample
 SAMPLE_RATE = 16000
 

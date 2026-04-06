@@ -1,6 +1,6 @@
 [package]
 name = "diane"
-version = "0.2.0"
+version = "0.3.0"
 description = "Diane — Retro voice recorder with live transcription"
 authors = ["Matt Wisniewski"]
 license = "MIT"
@@ -30,4 +30,6 @@ tokio = { version = "1", features = ["process", "fs"] }
 enigo = "0.6"
 whisper-rs = "0.16"
 ureq = "2"
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+tauri-plugin-notification = "2"
 rodio = "0.19"

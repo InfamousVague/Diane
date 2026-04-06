@@ -13,7 +13,7 @@ pub struct LiveTranscriber {
     worker: Option<JoinHandle<()>>,
     stop_signal: Arc<AtomicBool>,
     sample_counter: Arc<AtomicU64>,
-    events: Arc<Mutex<Vec<(u64, String)>>>,
+    events: Arc<Mutex<Vec<(usize, String)>>>, // (word_position, label)
 }
 
 impl LiveTranscriber {
@@ -200,28 +200,55 @@ impl LiveTranscriber {
         let segs = self.segments.lock().unwrap();
         let partial = self.partial.lock().unwrap();
 
-        let mut result = segs.join(" ");
+        let mut base = segs.join(" ");
         if !partial.is_empty() {
-            if !result.is_empty() {
-                result.push(' ');
+            if !base.is_empty() {
+                base.push(' ');
             }
-            result.push_str(&partial);
+            base.push_str(&partial);
+        }
+        let base = base.trim().to_string();
+
+        // Merge events inline by word position
+        let events = self.events.lock().unwrap();
+        if events.is_empty() {
+            return base;
         }
 
-        // Append any audio events
-        let events = self.events.lock().unwrap();
-        for (_ts, label) in events.iter() {
+        let words: Vec<&str> = base.split_whitespace().collect();
+        let mut result = String::new();
+        let mut event_idx = 0;
+
+        for (i, word) in words.iter().enumerate() {
+            // Insert any events that should appear before/at this word
+            while event_idx < events.len() && events[event_idx].0 <= i {
+                if !result.is_empty() {
+                    result.push(' ');
+                }
+                result.push_str(&format!("[{}]", events[event_idx].1));
+                event_idx += 1;
+            }
             if !result.is_empty() {
                 result.push(' ');
             }
-            result.push_str(&format!("[{}]", label));
+            result.push_str(word);
+        }
+
+        // Append any remaining events after all words
+        while event_idx < events.len() {
+            result.push(' ');
+            result.push_str(&format!("[{}]", events[event_idx].1));
+            event_idx += 1;
         }
 
         result.trim().to_string()
     }
 
     pub fn push_event(&self, _timestamp_ms: u64, label: String) {
-        self.events.lock().unwrap().push((0, label));
+        // Store event with the current word count so we can place it inline
+        let segs = self.segments.lock().unwrap();
+        let word_count = segs.iter().map(|s| s.split_whitespace().count()).sum::<usize>();
+        self.events.lock().unwrap().push((word_count, label));
     }
 
     pub fn elapsed_ms(&self) -> u64 {

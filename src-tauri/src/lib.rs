@@ -1,9 +1,12 @@
 mod audio;
+mod meeting_detector;
 
 use audio::recorder::AudioRecorder;
 use audio::transcribe::LiveTranscriber;
 use audio::playback::AudioPlayer;
 use audio::events::AudioEventDetector;
+use audio::desktop_capture::DesktopCapture;
+use meeting_detector::MeetingDetector;
 use std::sync::Mutex;
 use tauri::Manager;
 use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState};
@@ -12,7 +15,9 @@ struct AppState {
     recorder: AudioRecorder,
     transcriber: Mutex<LiveTranscriber>,
     event_detector: Mutex<AudioEventDetector>,
+    desktop_capture: Mutex<DesktopCapture>,
     player: Mutex<AudioPlayer>,
+    meeting_detector: Mutex<MeetingDetector>,
     recordings_dir: String,
     scripts_dir: String,
 }
@@ -30,7 +35,12 @@ fn start_recording(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let mut detector = state.event_detector.lock().map_err(|e| e.to_string())?;
     if let Err(e) = detector.start() {
         log::warn!("Audio event detector failed to start: {}", e);
-        // Non-fatal — transcription works without events
+    }
+
+    // Start desktop audio capture
+    let mut desktop = state.desktop_capture.lock().map_err(|e| e.to_string())?;
+    if let Err(e) = desktop.start() {
+        log::warn!("Desktop audio capture failed to start: {}", e);
     }
 
     Ok(())
@@ -56,6 +66,12 @@ async fn stop_recording(state: tauri::State<'_, AppState>) -> Result<StopRecordi
             transcriber.push_event(event.timestamp_ms, event.label);
         }
         detector.stop();
+    }
+
+    // Stop desktop audio capture
+    {
+        let mut desktop = state.desktop_capture.lock().map_err(|e| e.to_string())?;
+        desktop.stop();
     }
 
     // Feed final samples to transcriber and stop
@@ -259,6 +275,18 @@ fn resolve_default_audio(app: tauri::AppHandle, state: tauri::State<'_, AppState
 }
 
 #[tauri::command]
+fn get_meeting_state(state: tauri::State<'_, AppState>) -> String {
+    let detector = state.meeting_detector.lock().unwrap();
+    detector.get_state()
+}
+
+#[tauri::command]
+fn dismiss_meeting(state: tauri::State<'_, AppState>) {
+    let detector = state.meeting_detector.lock().unwrap();
+    detector.dismiss();
+}
+
+#[tauri::command]
 fn check_models_ready() -> bool {
     let home = dirs::home_dir().unwrap_or_default();
     home.join(".diane/models/ggml-base.en.bin").exists()
@@ -282,9 +310,23 @@ fn truncate_audio_cmd(audio_path: String, at_secs: f32) -> Result<String, String
 
 #[tauri::command]
 fn feed_audio_to_transcriber(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let samples = state.recorder.get_recent_samples();
+    let mic_samples = state.recorder.get_recent_samples();
+    let desktop_samples = {
+        let desktop = state.desktop_capture.lock().map_err(|e| e.to_string())?;
+        desktop.get_recent_samples()
+    };
+
+    // Mix mic + desktop audio
+    let samples = if desktop_samples.is_empty() {
+        mic_samples
+    } else if mic_samples.is_empty() {
+        desktop_samples
+    } else {
+        audio::mixer::mix_streams(&mic_samples, &desktop_samples)
+    };
+
     if !samples.is_empty() {
-        // Feed to whisper transcriber
+        // Feed mixed audio to whisper transcriber
         let transcriber = state.transcriber.lock().map_err(|e| e.to_string())?;
         transcriber.feed_samples(&samples);
 
@@ -320,15 +362,20 @@ pub fn run() {
     let recorder = AudioRecorder::new().expect("Failed to initialize audio recorder");
     let transcriber = LiveTranscriber::new();
     let event_detector = AudioEventDetector::new(&scripts_dir);
+    let desktop_capture = DesktopCapture::new(&scripts_dir);
+    let meeting_detector = MeetingDetector::new();
     let player = AudioPlayer::new();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState {
             recorder,
             transcriber: Mutex::new(transcriber),
             event_detector: Mutex::new(event_detector),
+            desktop_capture: Mutex::new(desktop_capture),
             player: Mutex::new(player),
+            meeting_detector: Mutex::new(meeting_detector),
             recordings_dir: recordings_dir.to_string_lossy().to_string(),
             scripts_dir: scripts_dir.to_string(),
         })
@@ -354,6 +401,8 @@ pub fn run() {
             get_tape_position_secs,
             truncate_audio_cmd,
             resolve_default_audio,
+            get_meeting_state,
+            dismiss_meeting,
             check_models_ready,
             download_models,
             hide_window,
@@ -433,6 +482,14 @@ pub fn run() {
                         tauri::LogicalPosition::new(x, y),
                     ));
                 }
+            }
+
+            // Start meeting detector
+            {
+                let app_handle = app.handle().clone();
+                let state: tauri::State<AppState> = app.state();
+                let mut detector = state.meeting_detector.lock().unwrap();
+                detector.start(app_handle);
             }
 
             Ok(())

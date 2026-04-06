@@ -8,6 +8,7 @@ interface HotkeyCallbacks {
   onPrevTape?: () => void;
   onNextTape?: () => void;
   onToggleDictation?: () => void;
+  onToggleDesktopAudio?: () => void;
   onPlay?: () => void;
 }
 
@@ -18,6 +19,7 @@ const SHORTCUTS = [
   { key: "CommandOrControl+Shift+Left", cb: "onPrevTape" as const },
   { key: "CommandOrControl+Shift+Right", cb: "onNextTape" as const },
   { key: "CommandOrControl+Shift+T", cb: "onToggleDictation" as const },
+  { key: "CommandOrControl+Shift+A", cb: "onToggleDesktopAudio" as const },
   { key: "CommandOrControl+Shift+P", cb: "onPlay" as const },
 ];
 

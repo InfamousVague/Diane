@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Recorder } from "./components/Recorder";
 import { TranscriptOverlay } from "./components/TranscriptOverlay";
 import { Header } from "./components/Header";
@@ -53,6 +54,22 @@ export function App() {
     }).catch(() => {});
   }, []);
 
+  // Listen for meeting detection — auto-start recording when notification clicked
+  useEffect(() => {
+    const unlisten = listen<string>("meeting-detected", (event) => {
+      console.log("Meeting detected:", event.payload);
+    });
+    const unlistenAutoStart = listen("auto-start-recording", () => {
+      if (!recordingRef.current) {
+        startRecording();
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+      unlistenAutoStart.then((fn) => fn());
+    };
+  }, []);
+
   // Load saved tapes on startup, seed defaults if empty
   useEffect(() => {
     invoke<Recording[]>("load_tapes").then((tapes) => {
@@ -101,6 +118,7 @@ export function App() {
   const [audioLevel, setAudioLevel] = useState(0);
   const [dictating, setDictating] = useState(false);
   const dictatingRef = useRef(false);
+  const [desktopAudio, setDesktopAudio] = useState(false);
   const lastTypedWordsRef = useRef(0); // tracks how many words we've already typed out
   const typingInFlightRef = useRef(false); // prevent overlapping type_text calls
   const startTimeRef = useRef(0);
@@ -195,6 +213,14 @@ export function App() {
       lastTypedWordsRef.current = allText.split(/\s+/).filter(Boolean).length;
     }
     console.log("Dictation mode:", next ? "ON" : "OFF");
+  }, []);
+
+  const toggleDesktopAudio = useCallback(() => {
+    setDesktopAudio((prev) => {
+      const next = !prev;
+      console.log("Desktop audio:", next ? "ON" : "OFF");
+      return next;
+    });
   }, []);
 
   const toggleRecord = useCallback(() => {
@@ -399,6 +425,7 @@ export function App() {
           setRewinding(false);
           setForwarding(false);
           setPlaybackLevel(0);
+          // Keep highlight at current position (0 if rewound to start)
         } else if (state === "idle" && playing) {
           setPlaying(false);
           setPlaybackLevel(0);
@@ -468,6 +495,16 @@ export function App() {
   }, [recording]);
 
   const saveTape = useCallback(async () => {
+    // If viewing a saved tape (not recording), eject = go to blank
+    if (viewingTape && !recordingRef.current && tapeRef.current.length === 0) {
+      stopPlaybackIfActive();
+      setSelectedTape(null);
+      setViewingTape(false);
+      setTranscript("");
+      setHighlightProgress(0);
+      return;
+    }
+
     // Stop recording first if active
     if (recordingRef.current) {
       await stopRecording();
@@ -596,6 +633,7 @@ export function App() {
     onStop: handleStop,
     onSaveTape: saveTape,
     onToggleDictation: toggleDictation,
+    onToggleDesktopAudio: toggleDesktopAudio,
     onPlay: handlePlay,
     onPrevTape: prevTape,
     onNextTape: nextTape,
@@ -672,6 +710,8 @@ export function App() {
             forwarding={forwarding}
             playbackLevel={playbackLevel}
             onToggleDictation={toggleDictation}
+            onToggleDesktopAudio={toggleDesktopAudio}
+            desktopAudio={desktopAudio}
             onPlay={handlePlay}
             onToggleRecord={toggleRecord}
             onRewindStart={handleRewindStart}
